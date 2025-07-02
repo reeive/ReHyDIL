@@ -1,4 +1,4 @@
-# ReHyDIL ：Hypergraph Tversky-Aware Domain Incremental Learning for Brain Tumor Segmentation with Missing Modalities
+# Hypergraph Tversky-Aware Domain Incremental Learning for Brain Tumor Segmentation with Missing Modalities
 
 ## 📂 Dataset Preparation
 
