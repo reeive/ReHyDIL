@@ -7,6 +7,7 @@ This demo requires the **BraTS 2019 (BraTS19)** dataset. You can request access 
 * [**The Brain Tumor Segmentation (BraTS) Challenge**](https://www.med.upenn.edu/cbica/brats2019.html)
 
 The script expects the data to be in a directory named ./BraTS19
+```bash
 ./BraTS19/
 ├── HGG/
 │   ├── BraTS19_TCIA01_.../
@@ -20,7 +21,7 @@ The script expects the data to be in a directory named ./BraTS19
     ├── BraTS19_TCIA08_.../
     │   ├── ...
     └── ...
-
+```
 
 ## 🚀 Train
 
@@ -32,11 +33,12 @@ The process is divided into four steps. Please run them in the following order:
 The model learns its first task using only the T1 modality.
 ```bash
 python train.py --img_mode t1
-```bash
+```
 Step 2: Incrementally add T2 images
 The model, already trained on T1, now learns to incorporate T2 images without forgetting the initial knowledge.
-
-
+```bash
+python demo.py --img_mode t2 --prev_img_mode t1  
+```
 We provide a simple demo for testing the code.
 
 In the demo, incremental learning can be done using the following commands:  
