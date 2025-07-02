@@ -2,7 +2,7 @@
 
 ## 📂 Dataset Preparation
 
-This demo requires the **BraTS 2019 (BraTS19)** dataset. You can request access and download it from the official source:
+This work requires the **BraTS 2019 (BraTS19)** dataset. You can request access and download it from the official source:
 
 * [**The Brain Tumor Segmentation (BraTS) Challenge**](https://www.med.upenn.edu/cbica/brats2019.html)
 
