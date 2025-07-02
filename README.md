@@ -32,7 +32,7 @@ The process is divided into four steps. Please run them in the following order:
 The model learns its first task using only the T1 modality.
 ```bash
 python train.py --img_mode t1
-
+```bash
 Step 2: Incrementally add T2 images
 The model, already trained on T1, now learns to incorporate T2 images without forgetting the initial knowledge.
 
