@@ -34,19 +34,21 @@ The model learns its first task using only the T1 modality.
 ```bash
 python train.py --img_mode t1
 ```
-Step 2: Incrementally add T2 images
+**Step 2: Incrementally add T2 images**
 The model, already trained on T1, now learns to incorporate T2 images without forgetting the initial knowledge.
 ```bash
-python demo.py --img_mode t2 --prev_img_mode t1  
+python train.py --img_mode t2 --prev_img_mode t1  
 ```
-We provide a simple demo for testing the code.
 
-In the demo, incremental learning can be done using the following commands:  
-python demo.py --img_mode t1  
-python demo.py --img_mode t2 --prev_img_mode t1  
-python demo.py --img_mode flair --prev_img_mode t2-t1  
-python demo.py --img_mode t1ce --prev_img_mode flair-t2-t1  
+**Step 3: Incrementally add FLAIR images**
+The model continues to learn, now adding the FLAIR modality.
+```bash
+python train.py --img_mode flair --prev_img_mode t2-t1   
+```
 
-The BraTS19 dataset needs to be used, and the preprocessing method is as described in the paper.
+**Step 4: Incrementally add T1ce images**
+Finally, the model learns from the T1ce modality, completing the sequence.
+```bash
+python train.py --img_mode t1ce --prev_img_mode flair-t2-t1  
+```
 
-The complete code and documentation will be released after acceptance.
