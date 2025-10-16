@@ -18,7 +18,7 @@ import os
 # =========================
 # CONFIG (edit as needed)
 # =========================
-MASK_DIR: str   = "/home/wjz/10.1/BraTS_2019/BraTS_slice/masks"   # directory containing .npy masks
+MASK_DIR: str   = " "   # directory containing .npy masks
 RECURSIVE: bool = True               # search subdirectories if True
 STRIP_SUFFIX: bool = True            # remove ".npy" from names
 OUT_DIR: str    = "lists"            # where to save the .list files
