@@ -39,9 +39,9 @@ python pre_list.py \
 ## Train
 
 `train.py` is a stage-wise runner: it trains the model incrementally over MRI modalities.
-Default configuration follows the clinical order: 't1, t2, flair, t1ce'.
+Default configuration follows the clinical order: `t1, t2, flair, t1ce`.
 
-If you don’t pass '--stages', the script will run all four stages in that order.
+If you don’t pass `--stages`, the script will run all four stages in that order.
 
 **Quick start (full clinical sequence — default)**
 The model learns its first task using only the T1 modality.
