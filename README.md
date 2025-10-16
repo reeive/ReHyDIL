@@ -38,49 +38,17 @@ python pre_list.py \
 
 ## Train
 
-The `train.py` script simulates an incremental learning scenario where the model learns from different MRI modalities sequentially.
+`train.py` is a stage-wise runner: it trains the model incrementally over MRI modalities.
+Default configuration follows the clinical order: 't1, t2, flair, t1ce'.
 
-The process is divided into four steps. Please run them in the following order:
+If you don’t pass '--stages', the script will run all four stages in that order.
 
-**Step 1: Train on T1 images**
+**Quick start (full clinical sequence — default)**
 The model learns its first task using only the T1 modality.
 ```bash
 python train.py \
   --data_path /path/to/data_root \
   --out_root  /path/to/outputs \
-  --stages t1 \
-  --train_fmt /path/lists/train.list \
-  --val_fmt   /path/lists/val.list
-```
-**Step 2: Incrementally add T2 images**
-The model, already trained on T1, now learns to incorporate T2 images without forgetting the initial knowledge.
-```bash
-python train.py \
-  --data_path /path/to/data_root \
-  --out_root  /path/to/outputs \
-  --stages t1,t2 \
-  --train_fmt /path/lists/train.list \
-  --val_fmt   /path/lists/val.list
-```
-
-**Step 3: Incrementally add FLAIR images**
-The model continues to learn, now adding the FLAIR modality.
-```bash
-python train.py \
-  --data_path /path/to/data_root \
-  --out_root  /path/to/outputs \
-  --stages t1,t2,flair \
-  --train_fmt /path/lists/train.list \
-  --val_fmt   /path/lists/val.list  
-```
-
-**Step 4: Incrementally add T1ce images**
-Finally, the model learns from the T1ce modality, completing the sequence.
-```bash
-python train.py \
-  --data_path /path/to/data_root \
-  --out_root  /path/to/outputs \
-  --stages t1,t2,flair,t1ce \
   --train_fmt /path/lists/train.list \
   --val_fmt   /path/lists/val.list
 ```
