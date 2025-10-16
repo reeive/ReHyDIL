@@ -29,13 +29,12 @@ Create patient-level train/val/test lists from BraTS19. Adjust paths/ratios as n
 
 ```bash
 # Example: write lists to ./lists using a 80/10/10 split (patient-level)
-# Tip: run `python pre_list.py -h` to see all available flags in your environment.
 python pre_list.py \
   --data_root ./BraTS19 \
   --out_dir   ./lists \
   --val_ratio 0.10 \
-  --test_ratio 0.10 \
-
+  --test_ratio 0.10 
+```
 
 ## Train
 
