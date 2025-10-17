@@ -15,7 +15,6 @@ SEED: int       = 1111
 TRAIN_NAME: str = "train.list"
 VAL_NAME: str   = "val.list"
 TEST_NAME: str  = "test.list"
-# =========================
 
 
 def collect_from_dir(mask_dir: Path, recursive: bool = True, strip_suffix: bool = True) -> List[str]:
