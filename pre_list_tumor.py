@@ -72,7 +72,7 @@ def split_8_1_1(names: List[str], seed: int = 1111) -> Tuple[List[str], List[str
     n = len(base)
     n_train = int(n * 0.8)
     n_val = int(n * 0.1)
-    n_test = n - n_train - n_val  
+    n_test = n - n_train - n_val
 
     train = base[:n_train]
     val = base[n_train:n_train + n_val]
