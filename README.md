@@ -1,6 +1,8 @@
 # Hypergraph Tversky-Aware Domain Incremental Learning for Brain Tumor Segmentation with Missing Modalities
 
-* [MICCAI 2025](https://link.springer.com/chapter/10.1007/978-3-032-05141-7_28) ReHyDIL — **Re**play-based **Hy**pergraph **D**omain **I**ncremental **L**earning
+* ReHyDIL — **Re**play-based **Hy**pergraph **D**omain **I**ncremental **L**earning
+
+* [MICCAI 2025](https://link.springer.com/chapter/10.1007/978-3-032-05141-7_28) 
   
 * [Paper link](https://papers.miccai.org/miccai-2025/paper/2774_paper.pdf)
 
