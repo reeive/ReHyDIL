@@ -59,3 +59,14 @@ python train.py \
   --val_fmt   /path/lists/val.list
 ```
 
+## Citation
+```bash
+@inproceedings{wang2025hypergraph,
+  title={Hypergraph tversky-aware domain incremental learning for brain tumor segmentation with missing modalities},
+  author={Wang, Junze and Fan, Lei and Jing, Weipeng and Di, Donglin and Song, Yang and Liu, Sidong and Cong, Cong},
+  booktitle={International Conference on Medical Image Computing and Computer-Assisted Intervention -- MICCAI 2025},
+  pages={283--293},
+  year={2025},
+  organization={Springer}
+}
+```
