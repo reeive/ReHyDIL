@@ -1,10 +1,10 @@
-# utils/stage_driver.py
-
-from dataclasses import dataclass
-from typing import List, Optional, Tuple
+# -*- coding: utf-8 -*-
 import os
 import math
 import logging
+from typing import List, Optional
+from dataclasses import dataclass
+
 import torch
 from torch import optim
 from torch.utils.data import DataLoader
@@ -15,9 +15,7 @@ from losses import focal_tversky
 from dataloader.dataset import BaseDataSets, PatientBatchSampler
 from utils.metrics import dice as dice_all
 from utils.metrics import batch_dice
-from utils.util import AverageMeter
-
-from .tac_queue import TACWithQueues, build_teacher_queue
+from utils.tac_queue import TACWithQueues, build_teacher_queue, BalanceQueue
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -29,32 +27,25 @@ class StageConfig:
     train_list: str
     val_list: str
     img_mode: str
-
     prev_img_modes: Optional[List[str]] = None
     prev_base_dir: Optional[str] = None
-
     mem_size: int = 320
-    p_keep: float = 0.10  # near-median P% kept for replay at stage end
-
+    p_keep: float = 0.10
     max_epoch: int = 81
     batch_size: int = 16
     images_rate: float = 1.0
-
     base_lr: float = 1e-3
     weight_decay: float = 3e-4
     optim_name: str = "adam"
-
-    lr_scheduler: str = "warmupMultistep"  # or warmupCosine, autoReduce
+    lr_scheduler: str = "warmupMultistep"
     step_num_lr: int = 4
-
     tversky_w: float = 7.0
     imb_w: float = 8.0
     nce_weight: float = 3.5
-
-    alpha: float = 0.7  # Tversky alpha
-    beta: float = 1.5   # Tversky beta
-    gamma: float = 1.2  # Focal gamma
-
+    alpha: float = 0.7
+    beta: float = 1.5
+    gamma: float = 1.2
+    in_channels: int = 1
     num_workers_train: int = 8
     num_workers_val: int = 4
     device: str = "cuda"
@@ -82,11 +73,12 @@ def _set_seed(seed: int):
 
 
 def _build_optimizer(net: torch.nn.Module, cfg: StageConfig):
-    if cfg.optim_name.lower() == "adam":
+    name = cfg.optim_name.lower()
+    if name == "adam":
         return optim.Adam(net.parameters(), lr=cfg.base_lr, weight_decay=cfg.weight_decay)
-    if cfg.optim_name.lower() == "adamw":
+    if name == "adamw":
         return optim.AdamW(net.parameters(), lr=cfg.base_lr, weight_decay=cfg.weight_decay)
-    if cfg.optim_name.lower() == "sgd":
+    if name == "sgd":
         return optim.SGD(net.parameters(), lr=cfg.base_lr, momentum=0.9, weight_decay=cfg.weight_decay)
     raise ValueError(f"Unknown optimizer: {cfg.optim_name}")
 
@@ -101,14 +93,14 @@ def _build_scheduler(optimizer, cfg: StageConfig):
         else:
             ms = [int(cfg.max_epoch * 0.15), int(cfg.max_epoch * 0.35), int(cfg.max_epoch * 0.55), int(cfg.max_epoch * 0.7)]
         def lr_lambda(epoch):
-            if epoch < warm_up_epochs:
+            if epoch < max(1, warm_up_epochs):
                 return (epoch + 1) / max(1, warm_up_epochs)
             steps = sum(int(m <= epoch) for m in ms)
             return 0.1 ** steps
         return optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
     elif cfg.lr_scheduler == 'warmupCosine':
         def lr_lambda(epoch):
-            if epoch < warm_up_epochs:
+            if epoch < max(1, warm_up_epochs):
                 return (epoch + 1) / max(1, warm_up_epochs)
             return 0.5 * (math.cos((epoch - warm_up_epochs) / max(1, cfg.max_epoch - warm_up_epochs) * math.pi) + 1)
         return optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
@@ -163,14 +155,15 @@ def _save_replay(modality: str,
 
 
 def run_stage(cfg: StageConfig):
+    import numpy as np
+    from pathlib import Path
+
     os.makedirs(cfg.base_dir, exist_ok=True)
     _set_seed(cfg.seed)
-
     device = torch.device(cfg.device if torch.cuda.is_available() else 'cpu')
 
-    # ===== Datasets & Loaders =====
     train_ds = BaseDataSets(cfg.data_path, "train", cfg.img_mode, 'masks_all', cfg.train_list, cfg.images_rate)
-    val_ds = BaseDataSets(cfg.data_path, "val",   cfg.img_mode, 'masks_all', cfg.val_list)
+    val_ds   = BaseDataSets(cfg.data_path, "val",   cfg.img_mode, 'masks_all', cfg.val_list)
 
     train_sampler = PatientBatchSampler(train_ds.sample_list, cfg.batch_size)
 
@@ -184,22 +177,32 @@ def run_stage(cfg: StageConfig):
     )
     val_loader = DataLoader(
         val_ds, batch_size=cfg.batch_size, shuffle=False,
-        num_workers=cfg.num_workers_val, pin_memory=True, persistent_workers=True, drop_last=True,
+        num_workers=cfg.num_workers_val, pin_memory=True, persistent_workers=True,
+        drop_last=False,
         worker_init_fn=_seed_worker
     )
 
-    # ===== Net & Optim =====
-    net = CPH(n_classes=3).to(device)
+    if cfg.in_channels == 1:
+        net = CPH(n_classes=3).to(device)
+    else:
+        class InputAdapter(torch.nn.Module):
+            def __init__(self, k: int):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(k, 1, kernel_size=1, bias=False)
+                with torch.no_grad():
+                    self.conv.weight[:] = 1.0 / k
+            def forward(self, x):
+                return self.conv(x)
+        net = torch.nn.Sequential(InputAdapter(cfg.in_channels), CPH(n_classes=3)).to(device)
+
     optimizer = _build_optimizer(net, cfg)
     scheduler = _build_scheduler(optimizer, cfg)
 
-    # Losses
     tversky = TverskyLoss(alpha=cfg.alpha, beta=cfg.beta)
     tac_loss = TACWithQueues(alpha=cfg.alpha, beta=cfg.beta, tau=1.0)
 
-    # ===== Teacher (prev stage) & Queue =====
-    prev_model = _load_prev_model(cfg.prev_base_dir, device)
-    teacher_queue = None
+    prev_model = _load_prev_model(cfg.prev_base_dir, str(device))
+    teacher_queue: Optional[BalanceQueue] = None
     if prev_model is not None and cfg.prev_img_modes:
         imgs_list, pats_list, mods_list = [], [], []
         for m in cfg.prev_img_modes:
@@ -211,158 +214,225 @@ def run_stage(cfg: StageConfig):
             mods_list.extend(list(rb['modalities']))
         if imgs_list:
             R_imgs = torch.cat(imgs_list, dim=0)
-            teacher_queue = build_teacher_queue(prev_model,
-                                                images=R_imgs,
-                                                patient_ids=pats_list,
-                                                modality_ids=mods_list,
-                                                max_size=min(cfg.mem_size, R_imgs.shape[0]),
-                                                batch_size=max(16, cfg.batch_size),
-                                                device=str(device), out_device='cpu', dtype=torch.float16)
-            logging.info(f"[TeacherQueue] Built with {teacher_queue.size} items")
+            teacher_queue = build_teacher_queue(
+                prev_model,
+                images=R_imgs,
+                patient_ids=pats_list,
+                modality_ids=mods_list,
+                max_size=min(cfg.mem_size, R_imgs.shape[0]),
+                batch_size=max(16, cfg.batch_size),
+                device=str(device),
+                out_device='cpu',
+                dtype=torch.float16,
+                in_channels=cfg.in_channels
+            )
+            logging.info(f"[BalanceQueue] QR built with {teacher_queue.size} items; mods={teacher_queue.debug_modality_hist()}")
 
     omega = 0.0 if (prev_model is None) else 1.0
 
-    # ===== Training =====
-    best_avg = 0.0
+    current_queue: Optional[BalanceQueue] = None
 
-    # Accumulators for stage-end near-median replay selection
-    stage_imgs, stage_masks = [], []
-    stage_losses, stage_patients, stage_modalities = [], [], []
+    stage_names = []
+    stage_losses = []
+
+    best_avg3 = 0.0
 
     for epoch in range(cfg.max_epoch):
-        net.train()
+        display_epoch = epoch + 1
 
-        # epoch accumulators (train)
-        train_loss_total = 0.0
-        train_dice_total = 0.0
+        net.train()
+        train_loss_sum = 0.0
         train_batches = 0
 
+        train_dice_sum = 0.0
+        train_dice_n   = 0
+
+        train_WT_sum = 0.0
+        train_TC_sum = 0.0
+        train_ET_sum = 0.0
+        train_class_batches = 0
+
         for batch in train_loader:
-            imgs = batch['image'].to(device=device, dtype=torch.float32)
+            imgs_orig = batch['image']
+            imgs = imgs_orig.to(device=device, dtype=torch.float32)
             masks = batch['mask'].to(device=device, dtype=torch.float32)
             slice_ids = batch['idx']
+            patients  = [str(s).split('_')[0] for s in slice_ids]
+            modalities = [cfg.img_mode] * len(patients)
+
+            if cfg.in_channels > 1 and imgs.shape[1] == 1:
+                imgs = imgs.repeat(1, cfg.in_channels, 1, 1)
 
             if imgs.size(0) < cfg.batch_size:
                 continue
 
             probs = torch.sigmoid(net(imgs))
 
-            # supervised
+            if current_queue is None:
+                _, C, H, W = probs.shape
+                current_queue = BalanceQueue(max_size=cfg.mem_size, channels=C, height=H, width=W,
+                                             dtype=torch.float16, device='cpu')
+
             loss_tv = tversky(probs, masks)
             loss_ft = focal_tversky(probs, masks, alpha=cfg.alpha, gamma=cfg.gamma, smooth=1.0)
 
-            # TAC
             loss_tac = probs.new_tensor(0.0)
             if omega > 0.0 and teacher_queue is not None and teacher_queue.size > 0:
-                patients = [str(s).split('_')[0] for s in slice_ids]
-                modalities = [cfg.img_mode] * len(patients)
-                loss_tac = tac_loss(probs, patients, modalities, teacher_queue)
+                loss_tac = tac_loss(probs, patients, modalities, teacher_queue, current_queue)  # [DQ]
 
             loss = cfg.tversky_w * loss_tv + cfg.imb_w * loss_ft + cfg.nce_weight * omega * loss_tac
+
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
             optimizer.step()
 
-            # train dice
+            current_queue.enqueue(probs.detach().to('cpu', dtype=torch.float16), patients, modalities)
+
             pred = (probs > 0.5).float()
-            dice_sum, num = batch_dice(pred.detach().cpu(), masks.detach().cpu())
-            batch_dice_avg = float(dice_sum / max(1, num))
+            dsum, ncnt = batch_dice(pred.detach().cpu(), masks.detach().cpu())
+            train_dice_sum += float(dsum)
+            train_dice_n   += int(ncnt)
 
-            # accumulate epoch stats
-            train_loss_total += float(loss.item())
-            train_dice_total += batch_dice_avg
-            train_batches += 1
+            p = pred.detach().cpu().numpy().astype('uint8')
+            t = masks.detach().cpu().numpy().astype('uint8')
+            d0, _, _ = dice_all(p[:, 0], t[:, 0])
+            d1, _, _ = dice_all(p[:, 1], t[:, 1])
+            d2, _, _ = dice_all(p[:, 2], t[:, 2])
+            train_WT_sum += float(d0); train_TC_sum += float(d1); train_ET_sum += float(d2)
+            train_class_batches += 1
 
-            # accumulate for replay selection
-            stage_imgs.append(imgs.detach().cpu().to(torch.float16))
-            stage_masks.append(masks.detach().cpu())
-            stage_losses.append(loss.detach().cpu())
-            stage_patients.extend([str(s).split('_')[0] for s in slice_ids])
-            stage_modalities.extend([cfg.img_mode] * imgs.shape[0])
+            train_loss_sum += float(loss.item())
+            train_batches  += 1
 
-        # ===== Validation =====
+            with torch.no_grad():
+                B = imgs_orig.shape[0]
+                for b in range(B):
+                    lt = tversky(probs[b:b+1], masks[b:b+1])
+                    lf = focal_tversky(probs[b:b+1], masks[b:b+1], alpha=cfg.alpha, gamma=cfg.gamma, smooth=1.0)
+                    sup_loss = (cfg.tversky_w * lt + cfg.imb_w * lf).item()
+                    stage_names.append(str(slice_ids[b]))
+                    stage_losses.append(float(sup_loss))
+
+        train_loss = train_loss_sum / max(1, train_batches)
+        train_dice_micro = (train_dice_sum / max(1, train_dice_n)) if train_dice_n > 0 else 0.0
+        train_WT_avg = train_WT_sum / max(1, train_class_batches)
+        train_TC_avg = train_TC_sum / max(1, train_class_batches)
+        train_ET_avg = train_ET_sum / max(1, train_class_batches)
+        train_dice_avg = (train_WT_avg + train_TC_avg + train_ET_avg) / 3.0
+
+
         net.eval()
-        val_loss_total = 0.0
-        val_loss_batches = 0
-        val_dice_sum_total = 0.0
-        val_dice_count = 0
+        val_loss_sum = 0.0
+        val_batches = 0
+        val_dice_sum = 0.0
+        val_dice_n   = 0
+        WT_sum = 0.0; TC_sum = 0.0; ET_sum = 0.0
+        class_batches = 0
 
-        WT = AverageMeter(); TC = AverageMeter(); ET = AverageMeter()
         with torch.no_grad():
             for batch in val_loader:
                 imgs = batch['image'].to(device=device, dtype=torch.float32)
                 masks = batch['mask'].to(device=device, dtype=torch.float32)
+                if cfg.in_channels > 1 and imgs.shape[1] == 1:
+                    imgs = imgs.repeat(1, cfg.in_channels, 1, 1)
+
                 probs = torch.sigmoid(net(imgs))
-                pred = (probs > 0.5).float()
+                pred  = (probs > 0.5).float()
 
-                # dice (global)
-                dice_sum, nidus_num = batch_dice(pred.detach().cpu(), masks.detach().cpu())
-                val_dice_sum_total += float(dice_sum)
-                val_dice_count += int(nidus_num)
+                dsum, ncnt = batch_dice(pred.detach().cpu(), masks.detach().cpu())
+                val_dice_sum += float(dsum)
+                val_dice_n   += int(ncnt)
 
-                # loss (weighted sum consistent with training supervised terms)
                 loss_val_tv = tversky(probs, masks)
                 loss_val_ft = focal_tversky(probs, masks, alpha=cfg.alpha, gamma=cfg.gamma, smooth=1.0)
-                loss_val = cfg.tversky_w * loss_val_tv + cfg.imb_w * loss_val_ft
-                val_loss_total += float(loss_val.item())
-                val_loss_batches += 1
+                val_loss_sum += float((cfg.tversky_w * loss_val_tv + cfg.imb_w * loss_val_ft).item())
+                val_batches  += 1
 
-                # per-class dice
                 p = pred.detach().cpu().numpy().astype('uint8')
                 t = masks.detach().cpu().numpy().astype('uint8')
-                d0,_,_ = dice_all(p[:,0], t[:,0]); WT.update(d0, 1)
-                d1,_,_ = dice_all(p[:,1], t[:,1]); TC.update(d1, 1)
-                d2,_,_ = dice_all(p[:,2], t[:,2]); ET.update(d2, 1)
+                d0, _, _ = dice_all(p[:, 0], t[:, 0])
+                d1, _, _ = dice_all(p[:, 1], t[:, 1])
+                d2, _, _ = dice_all(p[:, 2], t[:, 2])
+                WT_sum += float(d0); TC_sum += float(d1); ET_sum += float(d2)
+                class_batches += 1
 
-        # ===== Averages for this epoch =====
-        train_loss_avg = train_loss_total / max(1, train_batches)
-        train_dice_avg = train_dice_total / max(1, train_batches)
+        val_loss = val_loss_sum / max(1, val_batches)
+        val_dice_micro = (val_dice_sum / max(1, val_dice_n)) if val_dice_n > 0 else 0.0
+        WT_avg = WT_sum / max(1, class_batches)
+        TC_avg = TC_sum / max(1, class_batches)
+        ET_avg = ET_sum / max(1, class_batches)
+        val_dice_avg = (WT_avg + TC_avg + ET_avg) / 3.0
+        avg3 = val_dice_avg
 
-        val_loss_avg = val_loss_total / max(1, val_loss_batches)
-        val_dice_avg = val_dice_sum_total / max(1, val_dice_count)
-
-        avg3 = (WT.avg + TC.avg + ET.avg) / 3.0
-        lr_now = optimizer.param_groups[0]['lr']
-
-        # ===== Scheduler step =====
+        # LR schedule
         if cfg.lr_scheduler == 'autoReduce':
-            # use val loss average as the plateau metric
-            scheduler.step(val_loss_avg)
+            scheduler.step(val_loss)
         else:
             scheduler.step()
 
-        # ===== Save best & log =====
-        if avg3 > best_avg:
-            best_avg = avg3
-            torch.save(net.state_dict(), os.path.join(cfg.base_dir, 'model_CPH_best.pth'))
-            logging.info(f"[Best] epoch={epoch} Avg3={best_avg:.4f}")
-
         logging.info(
-            f"[{cfg.img_mode}] "
-            f"Epoch {epoch+1:03d}/{cfg.max_epoch:03d} | "
-            f"train_loss={train_loss_avg:.4f} train_dice={train_dice_avg:.4f} | "
-            f"val_loss={val_loss_avg:.4f} val_dice={val_dice_avg:.4f} | "
-            f"WT={WT.avg:.4f} TC={TC.avg:.4f} ET={ET.avg:.4f} | "
-            f"lr={lr_now:.6g}"
+            f"[{cfg.img_mode}] Epoch {display_epoch:03d}/{cfg.max_epoch:03d} | "
+            f"train_loss={train_loss:.4f} "
+            f"train_dice_micro={train_dice_micro:.4f} train_dice_avg={train_dice_avg:.4f} "
+            f"(WT={train_WT_avg:.4f} TC={train_TC_avg:.4f} ET={train_ET_avg:.4f}) | "
+            f"val_loss={val_loss:.4f} "
+            f"val_dice_micro={val_dice_micro:.4f} val_dice_avg={val_dice_avg:.4f} "
+            f"(WT={WT_avg:.4f} TC={TC_avg:.4f} ET={ET_avg:.4f}) | "
+            f"lr={optimizer.param_groups[0]['lr']:.6f}"
         )
 
-    # ===== Stage end: near-median P% replay selection =====
-    if stage_losses:
-        X = torch.cat(stage_imgs, dim=0).to(torch.float16)
-        Y = torch.cat(stage_masks, dim=0)
-        L = torch.stack(stage_losses).float().view(-1)
-        mu = torch.median(L)
-        dev = torch.abs(L - mu)
-        k = max(1, int(cfg.p_keep * len(L)))
-        sel = torch.argsort(dev)[:k]
+        if avg3 > best_avg3:
+            best_avg3 = avg3
+            torch.save(net.state_dict(), os.path.join(cfg.base_dir, 'model_CPH_best.pth'))
+            logging.info(f"[Best] epoch={display_epoch} val_dice_avg={best_avg3:.4f} val_dice_micro={val_dice_micro:.4f}")
 
-        Xs = X[sel].contiguous()
-        Ys = Y[sel].contiguous()
-        Ls = L[sel].contiguous()
-        pats = [stage_patients[i] for i in sel.tolist()]
-        mods = [stage_modalities[i] for i in sel.tolist()]
+
+    if len(stage_losses) > 0:
+        L = np.asarray(stage_losses, dtype=np.float32)
+        k = max(1, int(cfg.p_keep * len(L)))
+        mu = np.median(L)
+        dev = np.abs(L - mu)
+        sel_idx = np.argsort(dev)[:k]
+        sel_names = [stage_names[i] for i in sel_idx]
+
+        MOD_DIR = {
+            "flair": "imgs_flair",
+            "t1": "imgs_t1",
+            "t1ce": "imgs_t1ce",
+            "t2": "imgs_t2",
+        }
+
+        base_dir = Path(cfg.data_path)
+
+        sub = MOD_DIR[cfg.img_mode]
+        img_dir = base_dir / sub
+
+        # img_dir = Path(cfg.data_path) / cfg.img_mod
+        mask_dir = Path(cfg.data_path) / "masks_all"
+
+        def _to_chw(a: np.ndarray):
+            if a.ndim == 2:
+                return a[None, ...]
+            return a
+
+        X_chunks, Y_chunks = [], []
+        CHUNK = 1024
+        for s in range(0, len(sel_names), CHUNK):
+            part = sel_names[s:s+CHUNK]
+            imgs_np = [_to_chw(np.load(img_dir / f"{n}.npy")) for n in part]
+            masks_np = [_to_chw(np.load(mask_dir / f"{n}.npy")) for n in part]
+            X_chunks.append(torch.from_numpy(np.stack(imgs_np)).to(torch.float16))
+            Y_chunks.append(torch.from_numpy(np.stack(masks_np)).to(torch.uint8))
+
+        Xs = torch.cat(X_chunks, dim=0).contiguous()
+        Ys = torch.cat(Y_chunks, dim=0).contiguous()
+        Ls = torch.from_numpy(L[sel_idx]).to(torch.float32)
+        pats = [str(n).split('_')[0] for n in sel_names]
+        mods = [cfg.img_mode] * len(sel_names)
+
         _save_replay(cfg.img_mode, Xs, Ys, Ls, pats, mods)
+        logging.info(f"[Replay] collected={len(stage_losses)} keep%={cfg.p_keep:.2f} -> saved={len(sel_names)}")
 
     torch.save(net.state_dict(), os.path.join(cfg.base_dir, 'model_CPH_last.pth'))
     logging.info("[Stage] Done.")
