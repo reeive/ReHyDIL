@@ -30,7 +30,10 @@ The script expects the data to be in a directory named ./BraTS19
 ```
 
 ## Preprocess
-Run `python pre.py` to convert all .nii/.nii.gz volumes to .npy format and perform the full preprocessing pipeline (e.g., orientation/spacing standardization, normalization, cropping/padding, and split generation).
+`pre.py` is used to convert all .nii/.nii.gz volumes to .npy format and perform the full preprocessing pipeline (e.g., orientation/spacing standardization, normalization, cropping/padding, and split generation).
+```bash
+python pre.py
+```
 
 Create patient-level train/val/test lists using a 80/10/10 split (patient-level) from BraTS19. Adjust paths/ratios as needed.
 
