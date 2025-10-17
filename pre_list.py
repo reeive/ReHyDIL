@@ -1,29 +1,17 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
-"""
-Split .npy mask names into train/val/test with an 8:1:1 ratio.
-- Reads all .npy files under MASK_DIR (optionally recursive)
-- Strips the ".npy" suffix
-- Writes three .list files: train.list, val.list, test.list
-
-Configuration is hard-coded below.
-"""
 
 from pathlib import Path
 from typing import List
 import random
 import os
 
-# =========================
-# CONFIG (edit as needed)
-# =========================
-MASK_DIR: str   = " "   # directory containing .npy masks
-RECURSIVE: bool = True               # search subdirectories if True
-STRIP_SUFFIX: bool = True            # remove ".npy" from names
-OUT_DIR: str    = "lists"            # where to save the .list files
-PREFIX: str     = ""                 # optional filename prefix, e.g., "t1_"
-SEED: int       = 1111               # random seed for deterministic split
+
+MASK_DIR: str   = "/path/to/data_root"
+RECURSIVE: bool = True
+STRIP_SUFFIX: bool = True
+OUT_DIR: str    = "/path/to/data_root/lists"
+PREFIX: str     = ""
+SEED: int       = 1111
 TRAIN_NAME: str = "train.list"
 VAL_NAME: str   = "val.list"
 TEST_NAME: str  = "test.list"
@@ -48,13 +36,13 @@ def collect_from_dir(mask_dir: Path, recursive: bool = True, strip_suffix: bool 
 def split_8_1_1(names: List[str], seed: int = 1111) -> tuple[List[str], List[str], List[str]]:
     """Split into 80% train, 10% val, 10% test (deterministic)."""
     rng = random.Random(seed)
-    base = sorted(names)   # stable order before shuffling
+    base = sorted(names)
     rng.shuffle(base)
 
     n = len(base)
     n_train = int(n * 0.8)
     n_val = int(n * 0.1)
-    n_test = n - n_train - n_val  # remainder goes to test
+    n_test = n - n_train - n_val
 
     train = base[:n_train]
     val = base[n_train:n_train + n_val]
