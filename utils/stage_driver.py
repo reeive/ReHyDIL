@@ -4,7 +4,8 @@ import math
 import logging
 from typing import List, Optional
 from dataclasses import dataclass
-
+import numpy as np
+from pathlib import Path
 import torch
 from torch import optim
 from torch.utils.data import DataLoader
@@ -155,12 +156,16 @@ def _save_replay(modality: str,
 
 
 def run_stage(cfg: StageConfig):
-    import numpy as np
-    from pathlib import Path
 
     os.makedirs(cfg.base_dir, exist_ok=True)
     _set_seed(cfg.seed)
     device = torch.device(cfg.device if torch.cuda.is_available() else 'cpu')
+
+    logger = logging.getLogger()
+    fh = logging.FileHandler(os.path.join(cfg.base_dir, "train.log"), encoding="utf-8")
+    fh.setLevel(logging.INFO)
+    fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    logger.addHandler(fh)
 
     train_ds = BaseDataSets(cfg.data_path, "train", cfg.img_mode, 'masks_all', cfg.train_list, cfg.images_rate)
     val_ds   = BaseDataSets(cfg.data_path, "val",   cfg.img_mode, 'masks_all', cfg.val_list)
@@ -237,6 +242,8 @@ def run_stage(cfg: StageConfig):
 
     best_avg3 = 0.0
 
+    best_loss_by_name = {}
+
     for epoch in range(cfg.max_epoch):
         display_epoch = epoch + 1
 
@@ -310,9 +317,11 @@ def run_stage(cfg: StageConfig):
                 for b in range(B):
                     lt = tversky(probs[b:b+1], masks[b:b+1])
                     lf = focal_tversky(probs[b:b+1], masks[b:b+1], alpha=cfg.alpha, gamma=cfg.gamma, smooth=1.0)
-                    sup_loss = (cfg.tversky_w * lt + cfg.imb_w * lf).item()
-                    stage_names.append(str(slice_ids[b]))
-                    stage_losses.append(float(sup_loss))
+                    sup_loss = float((cfg.tversky_w * lt + cfg.imb_w * lf).item())
+                    name = str(slice_ids[b])
+                    prev = best_loss_by_name.get(name)
+                    if (prev is None) or (sup_loss < prev):
+                        best_loss_by_name[name] = sup_loss
 
         train_loss = train_loss_sum / max(1, train_batches)
         train_dice_micro = (train_dice_sum / max(1, train_dice_n)) if train_dice_n > 0 else 0.0
@@ -388,27 +397,23 @@ def run_stage(cfg: StageConfig):
             logging.info(f"[Best] epoch={display_epoch} val_dice_avg={best_avg3:.4f} val_dice_micro={val_dice_micro:.4f}")
 
 
-    if len(stage_losses) > 0:
-        L = np.asarray(stage_losses, dtype=np.float32)
-        k = max(1, int(cfg.p_keep * len(L)))
-        mu = np.median(L)
-        dev = np.abs(L - mu)
+    if len(best_loss_by_name) > 0:
+        import numpy as np
+        from pathlib import Path
+
+        names = list(best_loss_by_name.keys())
+        losses = np.array([best_loss_by_name[n] for n in names], dtype=np.float32)
+
+        # Keep the same selection policy as before (median-deviation top-k), now on deduplicated slices
+        k = max(1, int(cfg.p_keep * len(losses)))
+        mu = np.median(losses)
+        dev = np.abs(losses - mu)
         sel_idx = np.argsort(dev)[:k]
-        sel_names = [stage_names[i] for i in sel_idx]
 
-        MOD_DIR = {
-            "flair": "imgs_flair",
-            "t1": "imgs_t1",
-            "t1ce": "imgs_t1ce",
-            "t2": "imgs_t2",
-        }
+        sel_names = [names[i] for i in sel_idx]
+        sel_losses = losses[sel_idx]
 
-        base_dir = Path(cfg.data_path)
-
-        sub = MOD_DIR[cfg.img_mode]
-        img_dir = base_dir / sub
-
-        # img_dir = Path(cfg.data_path) / cfg.img_mod
+        img_dir = Path(cfg.data_path) / f"imgs_{cfg.img_mode}"
         mask_dir = Path(cfg.data_path) / "masks_all"
 
         def _to_chw(a: np.ndarray):
@@ -416,6 +421,7 @@ def run_stage(cfg: StageConfig):
                 return a[None, ...]
             return a
 
+        # Chunked I/O to be memory friendly
         X_chunks, Y_chunks = [], []
         CHUNK = 1024
         for s in range(0, len(sel_names), CHUNK):
@@ -427,12 +433,17 @@ def run_stage(cfg: StageConfig):
 
         Xs = torch.cat(X_chunks, dim=0).contiguous()
         Ys = torch.cat(Y_chunks, dim=0).contiguous()
-        Ls = torch.from_numpy(L[sel_idx]).to(torch.float32)
+        Ls = torch.from_numpy(sel_losses).to(torch.float32)
         pats = [str(n).split('_')[0] for n in sel_names]
         mods = [cfg.img_mode] * len(sel_names)
 
         _save_replay(cfg.img_mode, Xs, Ys, Ls, pats, mods)
-        logging.info(f"[Replay] collected={len(stage_losses)} keep%={cfg.p_keep:.2f} -> saved={len(sel_names)}")
+        logging.info(f"[Replay] unique={len(names)} keep%={cfg.p_keep:.2f} -> saved={len(sel_names)}")
+
+        best_loss_by_name.clear()
+
 
     torch.save(net.state_dict(), os.path.join(cfg.base_dir, 'model_CPH_last.pth'))
     logging.info("[Stage] Done.")
+    logger.removeHandler(fh)
+    fh.close()
