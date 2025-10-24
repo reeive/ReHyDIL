@@ -6,8 +6,11 @@ from typing import List, Optional
 from dataclasses import dataclass
 import numpy as np
 from pathlib import Path
+<<<<<<< HEAD
 import random
 import re
+=======
+>>>>>>> e56b4c8fdae0f22daf8c268871abb7fb2b9e6c73
 import torch
 from torch import optim
 from torch.utils.data import DataLoader
@@ -165,9 +168,19 @@ def _save_replay(modality: str, images: torch.Tensor, masks: torch.Tensor, losse
     logging.info(f"[Replay] Saved {images.shape[0]} samples to {path}")
 
 def run_stage(cfg: StageConfig):
+<<<<<<< HEAD
+=======
+
+>>>>>>> e56b4c8fdae0f22daf8c268871abb7fb2b9e6c73
     os.makedirs(cfg.base_dir, exist_ok=True)
     _set_seed(cfg.seed)
     device = torch.device(cfg.device if torch.cuda.is_available() else 'cpu')
+    logger = logging.getLogger()
+    fh = logging.FileHandler(os.path.join(cfg.base_dir, "train.log"), encoding="utf-8")
+    fh.setLevel(logging.INFO)
+    fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    logger.addHandler(fh)
+
     logger = logging.getLogger()
     fh = logging.FileHandler(os.path.join(cfg.base_dir, "train.log"), encoding="utf-8")
     fh.setLevel(logging.INFO)
@@ -405,16 +418,35 @@ def run_stage(cfg: StageConfig):
             torch.save(net.state_dict(), os.path.join(cfg.base_dir, 'model_CPH_best.pth'))
             logging.info(f"[Best] epoch={display_epoch} val_dice_avg={best_avg3:.4f} val_dice_micro={val_dice_micro:.4f}")
 
+<<<<<<< HEAD
     if len(best_loss_by_name) > 0:
         names = list(best_loss_by_name.keys())
         losses = np.array([best_loss_by_name[n] for n in names], dtype=np.float32)
+=======
+
+    if len(best_loss_by_name) > 0:
+        import numpy as np
+        from pathlib import Path
+
+        names = list(best_loss_by_name.keys())
+        losses = np.array([best_loss_by_name[n] for n in names], dtype=np.float32)
+
+        # Keep the same selection policy as before (median-deviation top-k), now on deduplicated slices
+>>>>>>> e56b4c8fdae0f22daf8c268871abb7fb2b9e6c73
         k = max(1, int(cfg.p_keep * len(losses)))
         mu = np.median(losses)
         dev = np.abs(losses - mu)
         sel_idx = np.argsort(dev)[:k]
+<<<<<<< HEAD
         sel_names = [names[i] for i in sel_idx]
         sel_losses = losses[sel_idx]
 
+=======
+
+        sel_names = [names[i] for i in sel_idx]
+        sel_losses = losses[sel_idx]
+
+>>>>>>> e56b4c8fdae0f22daf8c268871abb7fb2b9e6c73
         img_dir = Path(cfg.data_path) / f"imgs_{cfg.img_mode}"
         mask_dir = Path(cfg.data_path) / "masks_all"
 
@@ -423,6 +455,7 @@ def run_stage(cfg: StageConfig):
                 return a[None, ...]
             return a
 
+        # Chunked I/O to be memory friendly
         X_chunks, Y_chunks = [], []
         CHUNK = 1024
         for s in range(0, len(sel_names), CHUNK):
@@ -441,9 +474,14 @@ def run_stage(cfg: StageConfig):
         _save_replay(cfg.img_mode, Xs, Ys, Ls, pats, mods)
         logging.info(f"[Replay] unique={len(names)} keep%={cfg.p_keep:.2f} -> saved={len(sel_names)}")
 
+<<<<<<< HEAD
         stage_names.append(cfg.img_mode)
         stage_losses.append(float(best_avg3))
         best_loss_by_name.clear()
+=======
+        best_loss_by_name.clear()
+
+>>>>>>> e56b4c8fdae0f22daf8c268871abb7fb2b9e6c73
 
     torch.save(net.state_dict(), os.path.join(cfg.base_dir, 'model_CPH_last.pth'))
     logging.info("[Stage] Done.")
