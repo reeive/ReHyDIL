@@ -39,7 +39,7 @@ class BaseDataSets(Dataset):
         self.list_name = list_name
         self.transform = transform
 
-        list_path = os.path.join(self._data_dir,self.list_name)
+        list_path = self.list_name if os.path.isabs(self.list_name) else os.path.join(self._data_dir, self.list_name)
 
         with open(list_path, "r") as f:
             for line in f.readlines():
@@ -126,7 +126,8 @@ class PatientBatchSampler(Sampler):
             yield batch
 
     def __len__(self):
-        return 0
+        n = sum(len(v) for v in self.patient_to_indices.values())
+        return max(1, (n + self.batch_size - 1) // self.batch_size)
 
 
 
@@ -142,7 +143,7 @@ class PrevBaseDataSets(Dataset):
         self.list_name = list_name
         self.transform = transform
 
-        list_path = os.path.join(self._data_dir, self.list_name)
+        list_path = self.list_name if os.path.isabs(self.list_name) else os.path.join(self._data_dir, self.list_name)
 
         with open(list_path, "r") as f:
             for line in f.readlines():

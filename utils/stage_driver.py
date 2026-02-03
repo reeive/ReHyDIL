@@ -1,25 +1,14 @@
 # -*- coding: utf-8 -*-
 import os
 import math
+import random
+import re
 import logging
 from typing import List, Optional
 from dataclasses import dataclass
-<<<<<<< Updated upstream
 import numpy as np
 from pathlib import Path
-<<<<<<< HEAD
-import random
-import re
-=======
->>>>>>> e56b4c8fdae0f22daf8c268871abb7fb2b9e6c73
-=======
-<<<<<<< HEAD
-import numpy as np
-from pathlib import Path
-=======
 
->>>>>>> 41f4d8240b01ff70e424c19090a32bd14d994114
->>>>>>> Stashed changes
 import torch
 from torch import optim
 from torch.utils.data import DataLoader
@@ -31,10 +20,6 @@ from dataloader.dataset import BaseDataSets, PatientBatchSampler
 from utils.metrics import dice as dice_all
 from utils.metrics import batch_dice
 from utils.tac_queue import TACWithQueues, build_teacher_queue, BalanceQueue
-<<<<<<< Updated upstream
-=======
-
->>>>>>> Stashed changes
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -148,7 +133,7 @@ def _init_from_prev_weights(net: torch.nn.Module, prev_base_dir: Optional[str], 
     state = torch.load(model_path, map_location=device)
     try:
         net.load_state_dict(state, strict=False)
-    except:
+    except Exception:
         pass
 
 def _discover_prev_modalities(current_mode: str) -> List[str]:
@@ -181,17 +166,6 @@ def _save_replay(modality: str, images: torch.Tensor, masks: torch.Tensor, losse
     logging.info(f"[Replay] Saved {images.shape[0]} samples to {path}")
 
 def run_stage(cfg: StageConfig):
-<<<<<<< HEAD
-=======
-<<<<<<< Updated upstream
-
->>>>>>> e56b4c8fdae0f22daf8c268871abb7fb2b9e6c73
-=======
-    import numpy as np
-    from pathlib import Path
->>>>>>> 41f4d8240b01ff70e424c19090a32bd14d994114
-
->>>>>>> Stashed changes
     os.makedirs(cfg.base_dir, exist_ok=True)
     _set_seed(cfg.seed)
     device = torch.device(cfg.device if torch.cuda.is_available() else 'cpu')
@@ -201,24 +175,6 @@ def run_stage(cfg: StageConfig):
     fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
     logger.addHandler(fh)
 
-    logger = logging.getLogger()
-    fh = logging.FileHandler(os.path.join(cfg.base_dir, "train.log"), encoding="utf-8")
-    fh.setLevel(logging.INFO)
-    fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-    logger.addHandler(fh)
-
-<<<<<<< Updated upstream
-=======
-<<<<<<< HEAD
-    logger = logging.getLogger()
-    fh = logging.FileHandler(os.path.join(cfg.base_dir, "train.log"), encoding="utf-8")
-    fh.setLevel(logging.INFO)
-    fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-    logger.addHandler(fh)
-
-=======
->>>>>>> 41f4d8240b01ff70e424c19090a32bd14d994114
->>>>>>> Stashed changes
     train_ds = BaseDataSets(cfg.data_path, "train", cfg.img_mode, 'masks_all', cfg.train_list, cfg.images_rate)
     val_ds   = BaseDataSets(cfg.data_path, "val",   cfg.img_mode, 'masks_all', cfg.val_list)
 
@@ -252,11 +208,8 @@ def run_stage(cfg: StageConfig):
                 return self.conv(x)
         net = torch.nn.Sequential(InputAdapter(cfg.in_channels), CPH(n_classes=3)).to(device)
 
-<<<<<<< Updated upstream
     _init_from_prev_weights(net, cfg.prev_base_dir, str(device))
 
-=======
->>>>>>> Stashed changes
     optimizer = _build_optimizer(net, cfg)
     scheduler = _build_scheduler(optimizer, cfg)
 
@@ -264,16 +217,11 @@ def run_stage(cfg: StageConfig):
     tac_loss = TACWithQueues(alpha=cfg.alpha, beta=cfg.beta, tau=1.0)
 
     prev_model = _load_prev_model(cfg.prev_base_dir, str(device))
-<<<<<<< Updated upstream
 
     modes_to_load = cfg.prev_img_modes if (cfg.prev_img_modes and len(cfg.prev_img_modes) > 0) else _discover_prev_modalities(cfg.img_mode)
 
     teacher_queue: Optional[BalanceQueue] = None
     if prev_model is not None and modes_to_load:
-=======
-    teacher_queue: Optional[BalanceQueue] = None
-    if prev_model is not None and cfg.prev_img_modes:
->>>>>>> Stashed changes
         imgs_list, pats_list, mods_list = [], [], []
         for m in modes_to_load:
             rb = _load_replay(m, device='cpu')
@@ -289,11 +237,7 @@ def run_stage(cfg: StageConfig):
                 images=R_imgs,
                 patient_ids=pats_list,
                 modality_ids=mods_list,
-<<<<<<< Updated upstream
-                max_size=R_imgs.shape[0],
-=======
                 max_size=min(cfg.mem_size, R_imgs.shape[0]),
->>>>>>> Stashed changes
                 batch_size=max(16, cfg.batch_size),
                 device=str(device),
                 out_device='cpu',
@@ -306,20 +250,8 @@ def run_stage(cfg: StageConfig):
 
     current_queue: Optional[BalanceQueue] = None
 
-    stage_names = []
-    stage_losses = []
-
     best_avg3 = 0.0
-<<<<<<< Updated upstream
-
     best_loss_by_name = {}
-=======
-<<<<<<< HEAD
-
-    best_loss_by_name = {}
-=======
->>>>>>> 41f4d8240b01ff70e424c19090a32bd14d994114
->>>>>>> Stashed changes
 
     for epoch in range(cfg.max_epoch):
         display_epoch = epoch + 1
@@ -354,23 +286,14 @@ def run_stage(cfg: StageConfig):
 
             if current_queue is None:
                 _, C, H, W = probs.shape
-<<<<<<< Updated upstream
                 current_queue = BalanceQueue(max_size=cfg.mem_size, channels=C, height=H, width=W, dtype=torch.float16, device='cpu')
-=======
-                current_queue = BalanceQueue(max_size=cfg.mem_size, channels=C, height=H, width=W,
-                                             dtype=torch.float16, device='cpu')
->>>>>>> Stashed changes
 
             loss_tv = tversky(probs, masks)
             loss_ft = focal_tversky(probs, masks, alpha=cfg.alpha, gamma=cfg.gamma, smooth=1.0)
 
             loss_tac = probs.new_tensor(0.0)
             if omega > 0.0 and teacher_queue is not None and teacher_queue.size > 0:
-<<<<<<< Updated upstream
                 loss_tac = tac_loss(probs, patients, modalities, teacher_queue, current_queue)
-=======
-                loss_tac = tac_loss(probs, patients, modalities, teacher_queue, current_queue)  # [DQ]
->>>>>>> Stashed changes
 
             loss = cfg.tversky_w * loss_tv + cfg.imb_w * loss_ft + cfg.nce_weight * omega * loss_tac
 
@@ -393,7 +316,6 @@ def run_stage(cfg: StageConfig):
             d2, _, _ = dice_all(p[:, 2], t[:, 2])
             train_WT_sum += float(d0); train_TC_sum += float(d1); train_ET_sum += float(d2)
             train_class_batches += 1
-<<<<<<< Updated upstream
 
             train_loss_sum += float(loss.item())
             train_batches  += 1
@@ -415,36 +337,6 @@ def run_stage(cfg: StageConfig):
         train_TC_avg = train_TC_sum / max(1, train_class_batches)
         train_ET_avg = train_ET_sum / max(1, train_class_batches)
         train_dice_avg = (train_WT_avg + train_TC_avg + train_ET_avg) / 3.0
-=======
-
-            train_loss_sum += float(loss.item())
-            train_batches  += 1
-
-            with torch.no_grad():
-                B = imgs_orig.shape[0]
-                for b in range(B):
-                    lt = tversky(probs[b:b+1], masks[b:b+1])
-                    lf = focal_tversky(probs[b:b+1], masks[b:b+1], alpha=cfg.alpha, gamma=cfg.gamma, smooth=1.0)
-<<<<<<< HEAD
-                    sup_loss = float((cfg.tversky_w * lt + cfg.imb_w * lf).item())
-                    name = str(slice_ids[b])
-                    prev = best_loss_by_name.get(name)
-                    if (prev is None) or (sup_loss < prev):
-                        best_loss_by_name[name] = sup_loss
-=======
-                    sup_loss = (cfg.tversky_w * lt + cfg.imb_w * lf).item()
-                    stage_names.append(str(slice_ids[b]))
-                    stage_losses.append(float(sup_loss))
->>>>>>> 41f4d8240b01ff70e424c19090a32bd14d994114
-
-        train_loss = train_loss_sum / max(1, train_batches)
-        train_dice_micro = (train_dice_sum / max(1, train_dice_n)) if train_dice_n > 0 else 0.0
-        train_WT_avg = train_WT_sum / max(1, train_class_batches)
-        train_TC_avg = train_TC_sum / max(1, train_class_batches)
-        train_ET_avg = train_ET_sum / max(1, train_class_batches)
-        train_dice_avg = (train_WT_avg + train_TC_avg + train_ET_avg) / 3.0
-
->>>>>>> Stashed changes
 
         net.eval()
         val_loss_sum = 0.0
@@ -489,10 +381,6 @@ def run_stage(cfg: StageConfig):
         val_dice_avg = (WT_avg + TC_avg + ET_avg) / 3.0
         avg3 = val_dice_avg
 
-<<<<<<< Updated upstream
-=======
-        # LR schedule
->>>>>>> Stashed changes
         if cfg.lr_scheduler == 'autoReduce':
             scheduler.step(val_loss)
         else:
@@ -514,74 +402,18 @@ def run_stage(cfg: StageConfig):
             torch.save(net.state_dict(), os.path.join(cfg.base_dir, 'model_CPH_best.pth'))
             logging.info(f"[Best] epoch={display_epoch} val_dice_avg={best_avg3:.4f} val_dice_micro={val_dice_micro:.4f}")
 
-<<<<<<< Updated upstream
-<<<<<<< HEAD
     if len(best_loss_by_name) > 0:
         names = list(best_loss_by_name.keys())
         losses = np.array([best_loss_by_name[n] for n in names], dtype=np.float32)
-=======
 
-=======
-
-<<<<<<< HEAD
->>>>>>> Stashed changes
-    if len(best_loss_by_name) > 0:
-        import numpy as np
-        from pathlib import Path
-
-        names = list(best_loss_by_name.keys())
-        losses = np.array([best_loss_by_name[n] for n in names], dtype=np.float32)
-
-        # Keep the same selection policy as before (median-deviation top-k), now on deduplicated slices
-<<<<<<< Updated upstream
->>>>>>> e56b4c8fdae0f22daf8c268871abb7fb2b9e6c73
-=======
->>>>>>> Stashed changes
         k = max(1, int(cfg.p_keep * len(losses)))
         mu = np.median(losses)
         dev = np.abs(losses - mu)
         sel_idx = np.argsort(dev)[:k]
-<<<<<<< Updated upstream
-<<<<<<< HEAD
         sel_names = [names[i] for i in sel_idx]
         sel_losses = losses[sel_idx]
 
-=======
-=======
->>>>>>> Stashed changes
-
-        sel_names = [names[i] for i in sel_idx]
-        sel_losses = losses[sel_idx]
-
-<<<<<<< Updated upstream
->>>>>>> e56b4c8fdae0f22daf8c268871abb7fb2b9e6c73
         img_dir = Path(cfg.data_path) / f"imgs_{cfg.img_mode}"
-=======
-        img_dir = Path(cfg.data_path) / f"imgs_{cfg.img_mode}"
-=======
-    if len(stage_losses) > 0:
-        L = np.asarray(stage_losses, dtype=np.float32)
-        k = max(1, int(cfg.p_keep * len(L)))
-        mu = np.median(L)
-        dev = np.abs(L - mu)
-        sel_idx = np.argsort(dev)[:k]
-        sel_names = [stage_names[i] for i in sel_idx]
-
-        MOD_DIR = {
-            "flair": "imgs_flair",
-            "t1": "imgs_t1",
-            "t1ce": "imgs_t1ce",
-            "t2": "imgs_t2",
-        }
-
-        base_dir = Path(cfg.data_path)
-
-        sub = MOD_DIR[cfg.img_mode]
-        img_dir = base_dir / sub
-
-        # img_dir = Path(cfg.data_path) / cfg.img_mod
->>>>>>> 41f4d8240b01ff70e424c19090a32bd14d994114
->>>>>>> Stashed changes
         mask_dir = Path(cfg.data_path) / "masks_all"
 
         def _to_chw(a: np.ndarray):
@@ -589,14 +421,6 @@ def run_stage(cfg: StageConfig):
                 return a[None, ...]
             return a
 
-<<<<<<< Updated upstream
-        # Chunked I/O to be memory friendly
-=======
-<<<<<<< HEAD
-        # Chunked I/O to be memory friendly
-=======
->>>>>>> 41f4d8240b01ff70e424c19090a32bd14d994114
->>>>>>> Stashed changes
         X_chunks, Y_chunks = [], []
         CHUNK = 1024
         for s in range(0, len(sel_names), CHUNK):
@@ -608,40 +432,13 @@ def run_stage(cfg: StageConfig):
 
         Xs = torch.cat(X_chunks, dim=0).contiguous()
         Ys = torch.cat(Y_chunks, dim=0).contiguous()
-<<<<<<< Updated upstream
         Ls = torch.from_numpy(sel_losses).to(torch.float32)
-=======
-<<<<<<< HEAD
-        Ls = torch.from_numpy(sel_losses).to(torch.float32)
-=======
-        Ls = torch.from_numpy(L[sel_idx]).to(torch.float32)
->>>>>>> 41f4d8240b01ff70e424c19090a32bd14d994114
->>>>>>> Stashed changes
         pats = [str(n).split('_')[0] for n in sel_names]
         mods = [cfg.img_mode] * len(sel_names)
 
         _save_replay(cfg.img_mode, Xs, Ys, Ls, pats, mods)
-<<<<<<< Updated upstream
         logging.info(f"[Replay] unique={len(names)} keep%={cfg.p_keep:.2f} -> saved={len(sel_names)}")
-
-<<<<<<< HEAD
-        stage_names.append(cfg.img_mode)
-        stage_losses.append(float(best_avg3))
         best_loss_by_name.clear()
-=======
-        best_loss_by_name.clear()
-
->>>>>>> e56b4c8fdae0f22daf8c268871abb7fb2b9e6c73
-=======
-<<<<<<< HEAD
-        logging.info(f"[Replay] unique={len(names)} keep%={cfg.p_keep:.2f} -> saved={len(sel_names)}")
-
-        best_loss_by_name.clear()
-
-=======
-        logging.info(f"[Replay] collected={len(stage_losses)} keep%={cfg.p_keep:.2f} -> saved={len(sel_names)}")
->>>>>>> 41f4d8240b01ff70e424c19090a32bd14d994114
->>>>>>> Stashed changes
 
     torch.save(net.state_dict(), os.path.join(cfg.base_dir, 'model_CPH_last.pth'))
     logging.info("[Stage] Done.")
